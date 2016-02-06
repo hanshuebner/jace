@@ -24,6 +24,8 @@ import jace.core.Computer;
 import jace.core.RAM;
 import jace.core.RAMEvent.TYPE;
 import jace.state.Stateful;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -37,6 +39,7 @@ import java.util.logging.Logger;
  */
 @Stateful
 public class MOS65C02 extends CPU {
+
     private static final Logger LOG = Logger.getLogger(MOS65C02.class.getName());
 
     public boolean readAddressTriggersEvent = true;
@@ -83,30 +86,32 @@ public class MOS65C02 extends CPU {
     public void reconfigure() {
     }
 
+    public static final boolean USE_6502_TIMINGS = true;
+    
     public enum OPCODE {
         ADC_IMM(0x0069, COMMAND.ADC, MODE.IMMEDIATE, 2),
         ADC_ZP(0x0065, COMMAND.ADC, MODE.ZEROPAGE, 3),
         ADC_ZP_X(0x0075, COMMAND.ADC, MODE.ZEROPAGE_X, 4),
         ADC_AB(0x006D, COMMAND.ADC, MODE.ABSOLUTE, 4),
-        ADC_IND_ZP(0x0072, COMMAND.ADC, MODE.INDIRECT_ZP, 5, true),
-        ADC_IND_ZP_X(0x0061, COMMAND.ADC, MODE.INDIRECT_ZP_X, 6),
         ADC_AB_X(0x007D, COMMAND.ADC, MODE.ABSOLUTE_X, 4),
         ADC_AB_Y(0x0079, COMMAND.ADC, MODE.ABSOLUTE_Y, 4),
+        ADC_IND_ZP(0x0072, COMMAND.ADC, MODE.INDIRECT_ZP, 5, true),
+        ADC_IND_ZP_X(0x0061, COMMAND.ADC, MODE.INDIRECT_ZP_X, 6),
         ADC_IND_ZP_Y(0x0071, COMMAND.ADC, MODE.INDIRECT_ZP_Y, 5),
         AND_IMM(0x0029, COMMAND.AND, MODE.IMMEDIATE, 2),
         AND_ZP(0x0025, COMMAND.AND, MODE.ZEROPAGE, 3),
         AND_ZP_X(0x0035, COMMAND.AND, MODE.ZEROPAGE_X, 4),
         AND_AB(0x002D, COMMAND.AND, MODE.ABSOLUTE, 4),
-        AND_IND_ZP(0x0032, COMMAND.AND, MODE.INDIRECT_ZP, 5, true),
-        AND_IND_ZP_X(0x0021, COMMAND.AND, MODE.INDIRECT_ZP_X, 6),
         AND_AB_X(0x003D, COMMAND.AND, MODE.ABSOLUTE_X, 4),
         AND_AB_Y(0x0039, COMMAND.AND, MODE.ABSOLUTE_Y, 4),
+        AND_IND_ZP(0x0032, COMMAND.AND, MODE.INDIRECT_ZP, 5, true),
+        AND_IND_ZP_X(0x0021, COMMAND.AND, MODE.INDIRECT_ZP_X, 6),
         AND_IND_ZP_Y(0x0031, COMMAND.AND, MODE.INDIRECT_ZP_Y, 5),
         ASL(0x000A, COMMAND.ASL_A, MODE.IMPLIED, 2),
         ASL_ZP(0x0006, COMMAND.ASL, MODE.ZEROPAGE, 5),
         ASL_ZP_X(0x0016, COMMAND.ASL, MODE.ZEROPAGE_X, 6),
         ASL_AB(0x000E, COMMAND.ASL, MODE.ABSOLUTE, 6),
-        ASL_AB_X(0x001E, COMMAND.ASL, MODE.ABSOLUTE_X, 7),
+        ASL_AB_X(0x001E, COMMAND.ASL, MODE.ABSOLUTE_X, USE_6502_TIMINGS ? 7 : 6),
         BCC_REL(0x0090, COMMAND.BCC, MODE.RELATIVE, 2),
         BCS_REL(0x00B0, COMMAND.BCS, MODE.RELATIVE, 2),
         BBR0(0x00f, COMMAND.BBR0, MODE.ZP_REL, 5, true),
@@ -125,16 +130,16 @@ public class MOS65C02 extends CPU {
         BBS5(0x0df, COMMAND.BBS5, MODE.ZP_REL, 5, true),
         BBS6(0x0ef, COMMAND.BBS6, MODE.ZP_REL, 5, true),
         BBS7(0x0ff, COMMAND.BBS7, MODE.ZP_REL, 5, true),
-        BEQ_REL0(0x00F0, COMMAND.BEQ, MODE.RELATIVE, 2),
+        BEQ_REL(0x00F0, COMMAND.BEQ, MODE.RELATIVE, 2),
         BIT_IMM(0x0089, COMMAND.BIT, MODE.IMMEDIATE, 3, true),
         BIT_ZP(0x0024, COMMAND.BIT, MODE.ZEROPAGE, 3),
-        BIT_ZP_X(0x0034, COMMAND.BIT, MODE.ZEROPAGE_X, 3, true),
+        BIT_ZP_X(0x0034, COMMAND.BIT, MODE.ZEROPAGE_X, 4, true),
         BIT_AB(0x002C, COMMAND.BIT, MODE.ABSOLUTE, 4),
         BIT_AB_X(0x003C, COMMAND.BIT, MODE.ABSOLUTE_X, 4, true),
         BMI_REL(0x0030, COMMAND.BMI, MODE.RELATIVE, 2),
         BNE_REL(0x00D0, COMMAND.BNE, MODE.RELATIVE, 2),
-        BPL_REL(0x0010, COMMAND.BPL, MODE.RELATIVE, 2),
-        BRA_REL(0x0080, COMMAND.BRA, MODE.RELATIVE, 2, true),
+        BPL_REL(0x0010, COMMAND.BPL, MODE.RELATIVE, 2), //?
+        BRA_REL(0x0080, COMMAND.BRA, MODE.RELATIVE, 2),
         //        BRK(0x0000, COMMAND.BRK, MODE.IMPLIED, 7),
         // Do this so that BRK is treated as a two-byte instruction
         BRK(0x0000, COMMAND.BRK, MODE.IMMEDIATE, 7),
@@ -160,10 +165,10 @@ public class MOS65C02 extends CPU {
         CPY_ZP(0x00C4, COMMAND.CPY, MODE.ZEROPAGE, 3),
         CPY_AB(0x00CC, COMMAND.CPY, MODE.ABSOLUTE, 4),
         DEC(0x003A, COMMAND.DEA, MODE.IMPLIED, 2, true),
-        DEC_ZP(0x00C6, COMMAND.DEC, MODE.ZEROPAGE, 5),
+        DEC_ZP(0x00C6, COMMAND.DEC, MODE.ZEROPAGE, 5), // ??
         DEC_ZP_X(0x00D6, COMMAND.DEC, MODE.ZEROPAGE_X, 6),
         DEC_AB(0x00CE, COMMAND.DEC, MODE.ABSOLUTE, 6),
-        DEC_AB_X(0x00DE, COMMAND.DEC, MODE.ABSOLUTE_X, 7),
+        DEC_AB_X(0x00DE, COMMAND.DEC, MODE.ABSOLUTE_X_NODELAY, 7),
         DEX(0x00CA, COMMAND.DEX, MODE.IMPLIED, 2),
         DEY(0x0088, COMMAND.DEY, MODE.IMPLIED, 2),
         EOR_IMM(0x0049, COMMAND.EOR, MODE.IMMEDIATE, 2),
@@ -179,11 +184,11 @@ public class MOS65C02 extends CPU {
         INC_ZP(0x00E6, COMMAND.INC, MODE.ZEROPAGE, 5),
         INC_ZP_X(0x00F6, COMMAND.INC, MODE.ZEROPAGE_X, 6),
         INC_AB(0x00EE, COMMAND.INC, MODE.ABSOLUTE, 6),
-        INC_AB_X(0x00FE, COMMAND.INC, MODE.ABSOLUTE_X, 7),
+        INC_AB_X(0x00FE, COMMAND.INC, MODE.ABSOLUTE_X_NODELAY, 7),
         INX(0x00E8, COMMAND.INX, MODE.IMPLIED, 2),
         INY(0x00C8, COMMAND.INY, MODE.IMPLIED, 2),
-        JMP_AB(0x004C, COMMAND.JMP, MODE.ABSOLUTE, 3, false, false),
-        JMP_IND(0x006C, COMMAND.JMP, MODE.INDIRECT, 5),
+        JMP_AB(0x004C, COMMAND.JMP, MODE.ABSOLUTE, 3, false, false), // ??
+        JMP_IND(0x006C, COMMAND.JMP, MODE.INDIRECT, 6),
         JMP_IND_X(0x007C, COMMAND.JMP, MODE.INDIRECT_X, 6, true),
         JSR_AB(0x0020, COMMAND.JSR, MODE.ABSOLUTE, 6, false, false),
         LDA_IMM(0x00A9, COMMAND.LDA, MODE.IMMEDIATE, 2),
@@ -191,7 +196,7 @@ public class MOS65C02 extends CPU {
         LDA_ZP_X(0x00B5, COMMAND.LDA, MODE.ZEROPAGE_X, 4),
         LDA_AB(0x00AD, COMMAND.LDA, MODE.ABSOLUTE, 4),
         LDA_IND_ZP_X(0x00A1, COMMAND.LDA, MODE.INDIRECT_ZP_X, 6),
-        LDA_AB_X(0x00BD, COMMAND.LDA, MODE.ABSOLUTE_X, 4),
+        LDA_AB_X(0x00BD, COMMAND.LDA, MODE.ABSOLUTE_X, 4, true), //?
         LDA_AB_Y(0x00B9, COMMAND.LDA, MODE.ABSOLUTE_Y, 4),
         LDA_IND_ZP_Y(0x00B1, COMMAND.LDA, MODE.INDIRECT_ZP_Y, 5),
         LDA_IND_ZP(0x00B2, COMMAND.LDA, MODE.INDIRECT_ZP, 5, true),
@@ -209,7 +214,7 @@ public class MOS65C02 extends CPU {
         LSR_ZP(0x0046, COMMAND.LSR, MODE.ZEROPAGE, 5),
         LSR_ZP_X(0x0056, COMMAND.LSR, MODE.ZEROPAGE_X, 6),
         LSR_AB(0x004E, COMMAND.LSR, MODE.ABSOLUTE, 6),
-        LSR_AB_X(0x005E, COMMAND.LSR, MODE.ABSOLUTE_X, 7),
+        LSR_AB_X(0x005E, COMMAND.LSR, MODE.ABSOLUTE_X, USE_6502_TIMINGS ? 7 : 6),
         NOP(0x00EA, COMMAND.NOP, MODE.IMPLIED, 2),
         SPECIAL(0x00FC, COMMAND.NOP_SPECIAL, MODE.ABSOLUTE, 4),
         ORA_IMM(0x0009, COMMAND.ORA, MODE.IMMEDIATE, 2),
@@ -241,22 +246,22 @@ public class MOS65C02 extends CPU {
         ROL_ZP(0x0026, COMMAND.ROL, MODE.ZEROPAGE, 5),
         ROL_ZP_X(0x0036, COMMAND.ROL, MODE.ZEROPAGE_X, 6),
         ROL_AB(0x002E, COMMAND.ROL, MODE.ABSOLUTE, 6),
-        ROL_AB_X(0x003E, COMMAND.ROL, MODE.ABSOLUTE_X, 7),
+        ROL_AB_X(0x003E, COMMAND.ROL, USE_6502_TIMINGS ? MODE.ABSOLUTE_X_NODELAY : MODE.ABSOLUTE_X, USE_6502_TIMINGS ? 7 : 6),
         ROR(0x006A, COMMAND.ROR_A, MODE.IMPLIED, 2),
         ROR_ZP(0x0066, COMMAND.ROR, MODE.ZEROPAGE, 5),
         ROR_ZP_X(0x0076, COMMAND.ROR, MODE.ZEROPAGE_X, 6),
         ROR_AB(0x006E, COMMAND.ROR, MODE.ABSOLUTE, 6),
-        ROR_AB_X(0x007E, COMMAND.ROR, MODE.ABSOLUTE_X, 7),
+        ROR_AB_X(0x007E, COMMAND.ROR, USE_6502_TIMINGS ? MODE.ABSOLUTE_X_NODELAY : MODE.ABSOLUTE_X, USE_6502_TIMINGS ? 7 : 6),
         RTI(0x0040, COMMAND.RTI, MODE.IMPLIED, 6),
         RTS(0x0060, COMMAND.RTS, MODE.IMPLIED, 6),
         SBC_IMM(0x00E9, COMMAND.SBC, MODE.IMMEDIATE, 2),
         SBC_ZP(0x00E5, COMMAND.SBC, MODE.ZEROPAGE, 3),
         SBC_ZP_X(0x00F5, COMMAND.SBC, MODE.ZEROPAGE_X, 4),
         SBC_AB(0x00ED, COMMAND.SBC, MODE.ABSOLUTE, 4),
-        SBC_IND_ZP(0x00F2, COMMAND.SBC, MODE.INDIRECT_ZP, 5, true),
-        SBC_IND_ZP_X(0x00E1, COMMAND.SBC, MODE.INDIRECT_ZP_X, 6),
         SBC_AB_X(0x00FD, COMMAND.SBC, MODE.ABSOLUTE_X, 4),
         SBC_AB_Y(0x00F9, COMMAND.SBC, MODE.ABSOLUTE_Y, 4),
+        SBC_IND_ZP(0x00F2, COMMAND.SBC, MODE.INDIRECT_ZP, 5, true),
+        SBC_IND_ZP_X(0x00E1, COMMAND.SBC, MODE.INDIRECT_ZP_X, 6),
         SBC_IND_ZP_Y(0x00F1, COMMAND.SBC, MODE.INDIRECT_ZP_Y, 5),
         SEC(0x0038, COMMAND.SEC, MODE.IMPLIED, 2),
         SED(0x00F8, COMMAND.SED, MODE.IMPLIED, 2),
@@ -270,13 +275,13 @@ public class MOS65C02 extends CPU {
         SMB6(0x0e7, COMMAND.SMB6, MODE.ZEROPAGE, 5, true),
         SMB7(0x0f7, COMMAND.SMB7, MODE.ZEROPAGE, 5, true),
         STA_ZP(0x0085, COMMAND.STA, MODE.ZEROPAGE, 3),
-        STA_ZP_X(0x0095, COMMAND.STA, MODE.ZEROPAGE_X, 4),
+        STA_ZP_X(0x0095, COMMAND.STA, MODE.ZEROPAGE_X, 4), // ??
         STA_AB(0x008D, COMMAND.STA, MODE.ABSOLUTE, 4),
-        STA_AB_X(0x009D, COMMAND.STA, MODE.ABSOLUTE_X, 5),
-        STA_AB_Y(0x0099, COMMAND.STA, MODE.ABSOLUTE_Y, 5),
+        STA_AB_X(0x009D, COMMAND.STA, MODE.ABSOLUTE_X_NODELAY, 5),
+        STA_AB_Y(0x0099, COMMAND.STA, MODE.ABSOLUTE_Y_NODELAY, 5),
         STA_IND_ZP(0x0092, COMMAND.STA, MODE.INDIRECT_ZP, 5, true),
         STA_IND_ZP_X(0x0081, COMMAND.STA, MODE.INDIRECT_ZP_X, 6),
-        STA_IND_ZP_Y(0x0091, COMMAND.STA, MODE.INDIRECT_ZP_Y, 6),
+        STA_IND_ZP_Y(0x0091, COMMAND.STA, MODE.INDIRECT_ZP_Y_NODELAY, 6),
         STP(0x00DB, COMMAND.STP, MODE.IMPLIED, 3, true),
         STX_ZP(0x0086, COMMAND.STX, MODE.ZEROPAGE, 3),
         STX_ZP_Y(0x0096, COMMAND.STX, MODE.ZEROPAGE_Y, 4),
@@ -288,7 +293,7 @@ public class MOS65C02 extends CPU {
         STZ_ZP_X(0x0074, COMMAND.STZ, MODE.ZEROPAGE_X, 4, true),
         STZ_AB(0x009C, COMMAND.STZ, MODE.ABSOLUTE, 4, true),
         STZ_AB_X(0x009E, COMMAND.STZ, MODE.ABSOLUTE_X, 5, true),
-        TAX(0x00AA, COMMAND.TAX, MODE.IMPLIED, 2),
+        TAX(0x00AA, COMMAND.TAX, MODE.IMPLIED, 2), // ??
         TAY(0x00A8, COMMAND.TAY, MODE.IMPLIED, 2),
         TRB_ZP(0x0014, COMMAND.TRB, MODE.ZEROPAGE, 5, true),
         TRB_AB(0x001C, COMMAND.TRB, MODE.ABSOLUTE, 6, true),
@@ -401,6 +406,12 @@ public class MOS65C02 extends CPU {
             }
             return address2;
         }),
+        INDIRECT_ZP_Y_NODELAY(2, "$(~1),Y", (cpu) -> {
+            int address = 0x00FF & cpu.getMemory().read(cpu.getProgramCounter() + 1, TYPE.READ_OPERAND, cpu.readAddressTriggersEvent, false);
+            address = cpu.getMemory().readWord(address, TYPE.READ_DATA, true, false);
+            int address2 = address + cpu.Y;
+            return address2;
+        }),
         ABSOLUTE(3, "$~2~1", (cpu) -> cpu.getMemory().readWord(cpu.getProgramCounter() + 1, TYPE.READ_OPERAND, cpu.readAddressTriggersEvent, false)),
         ABSOLUTE_X(3, "$~2~1,X", (cpu) -> {
             int address2 = cpu.getMemory().readWord(cpu.getProgramCounter() + 1, TYPE.READ_OPERAND, cpu.readAddressTriggersEvent, false);
@@ -410,12 +421,22 @@ public class MOS65C02 extends CPU {
             }
             return address;
         }),
+        ABSOLUTE_X_NODELAY(3, "$~2~1,X", (cpu) -> {
+            int address2 = cpu.getMemory().readWord(cpu.getProgramCounter() + 1, TYPE.READ_OPERAND, cpu.readAddressTriggersEvent, false);
+            int address = 0x0FFFF & (address2 + cpu.X);
+            return address;
+        }),
         ABSOLUTE_Y(3, "$~2~1,Y", (cpu) -> {
             int address2 = cpu.getMemory().readWord(cpu.getProgramCounter() + 1, TYPE.READ_OPERAND, cpu.readAddressTriggersEvent, false);
             int address = 0x0FFFF & (address2 + cpu.Y);
             if ((address & 0x00FF00) != (address2 & 0x00FF00)) {
                 cpu.addWaitCycles(1);
             }
+            return address;
+        }),
+        ABSOLUTE_Y_NODELAY(3, "$~2~1,Y", (cpu) -> {
+            int address2 = cpu.getMemory().readWord(cpu.getProgramCounter() + 1, TYPE.READ_OPERAND, cpu.readAddressTriggersEvent, false);
+            int address = 0x0FFFF & (address2 + cpu.Y);
             return address;
         }),
         ZP_REL(2, "$~1,$R", new AddressCalculator() {
@@ -466,6 +487,7 @@ public class MOS65C02 extends CPU {
         private MODE(int size, String fmt, AddressCalculator calc) {
             this(size, fmt, calc, true);
         }
+
         private MODE(int size, String fmt, AddressCalculator calc, boolean fetch) {
             this.fetchValue = fetch;
             this.size = size;
@@ -590,6 +612,7 @@ public class MOS65C02 extends CPU {
             int w;
             cpu.V = ((cpu.A ^ value) & 0x080) == 0;
             if (cpu.D) {
+                cpu.addWaitCycles(1);
                 // Decimal Mode
                 w = (cpu.A & 0x0f) + (value & 0x0f) + cpu.C;
                 if (w >= 10) {
@@ -707,7 +730,7 @@ public class MOS65C02 extends CPU {
         }),
         BRA((address, value, addressMode, cpu) -> {
             cpu.setProgramCounter(address);
-            cpu.addWaitCycles(cpu.pageBoundaryPenalty ? 1 : 0);
+            cpu.addWaitCycles(cpu.pageBoundaryPenalty ? 2 : 1);
         }),
         BRK((address, value, addressMode, cpu) -> {
             cpu.BRK();
@@ -910,6 +933,7 @@ public class MOS65C02 extends CPU {
             cpu.V = ((cpu.A ^ value) & 0x080) != 0;
             int w;
             if (cpu.D) {
+                cpu.addWaitCycles(1);
                 int temp = 0x0f + (cpu.A & 0x0f) - (value & 0x0f) + cpu.C;
                 if (temp < 0x10) {
                     w = 0;
@@ -1044,6 +1068,54 @@ public class MOS65C02 extends CPU {
         }
     }
 
+    Map<OPCODE, Map<Integer, Integer>> histogram = null;
+    int ellapsedSeconds = 0;
+    long startTime = System.currentTimeMillis();
+    long nextInterval = System.currentTimeMillis() + 1000;
+
+    private void addToHistogram(OPCODE o) {
+        if (histogram == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now >= nextInterval) {
+            ellapsedSeconds = (int) ((now - startTime) / 1000);
+            nextInterval = ellapsedSeconds * 1000 + startTime;
+        }
+        Map<Integer, Integer> countPerTimestamp = histogram.get(o);
+        if (countPerTimestamp == null) {
+            countPerTimestamp = new HashMap<>();
+            histogram.put(o, countPerTimestamp);
+        }
+        Integer count = countPerTimestamp.get(ellapsedSeconds);
+        if (count == null) {
+            count = 0;
+        }
+        countPerTimestamp.put(ellapsedSeconds, count+1);
+    }
+
+    private void dumpHistogram(Map<OPCODE, Map<Integer, Integer>> histogram) {
+        System.out.println("\nOpcode");
+        for (int i = 0; i <= ellapsedSeconds; i++) {
+            System.out.print("\t");
+            System.out.print(i);
+        }
+        System.out.println();
+        for (OPCODE o : histogram.keySet()) {
+            System.out.print(o.name());
+            Map<Integer, Integer> countPerTimestamp = histogram.get(o);
+            for (int i = 0; i <= ellapsedSeconds; i++) {
+                Integer count = countPerTimestamp.get(i);
+                if (count == null) {
+                    count = 0;
+                }
+                System.out.print("\t");
+                System.out.print(count);
+            }
+            System.out.println();
+        }
+    }
+
     @Override
     protected void executeOpcode() {
         if (interruptSignalled) {
@@ -1065,6 +1137,7 @@ public class MOS65C02 extends CPU {
         // This makes it possible to trap the memory read of an opcode, when PC == Address, you know it is executing that opcode.
         int op = 0x00ff & getMemory().read(pc, TYPE.EXECUTE, true, false);
         OPCODE opcode = opcodes[op];
+        addToHistogram(opcode);
         if (traceEntry != null && warnAboutExtendedOpcodes && opcode != null && opcode.isExtendedOpcode) {
             LOG.log(Level.WARNING, ">>EXTENDED OPCODE DETECTED {0}<<", Integer.toHexString(opcode.code));
             LOG.log(Level.WARNING, traceEntry);
@@ -1072,7 +1145,7 @@ public class MOS65C02 extends CPU {
                 log(">>EXTENDED OPCODE DETECTED " + Integer.toHexString(opcode.code) + "<<");
                 log(traceEntry);
             }
-        }        
+        }
         if (opcode == null) {
             // handle bad opcode as a NOP
             int wait = 0;
@@ -1095,14 +1168,16 @@ public class MOS65C02 extends CPU {
                         wait = 3;
                     } else {
                         wait = 4;
-                    }   break;
+                    }
+                    break;
                 case 0x0c:
                     bytes = 3;
                     if ((op & 0x0f0) == 0x050) {
                         wait = 8;
                     } else {
                         wait = 4;
-                    }   break;
+                    }
+                    break;
                 default:
             }
             incrementProgramCounter(bytes);
@@ -1180,8 +1255,8 @@ public class MOS65C02 extends CPU {
 
     @Override
     public void JSR(int address) {
-            pushPC();
-            setProgramCounter(address);
+        pushPC();
+        setProgramCounter(address);
     }
 
     public void BRK() {
@@ -1226,6 +1301,14 @@ public class MOS65C02 extends CPU {
     // Cold/Warm boot procedure
     @Override
     public void reset() {
+        if (histogram != null) {
+            Map<OPCODE, Map<Integer, Integer>> oldHistogram = histogram;
+            histogram = null;
+            dumpHistogram(oldHistogram);
+        }
+        startTime = System.currentTimeMillis();
+        ellapsedSeconds = 0;
+        histogram = new HashMap<>();
         pushWord(getProgramCounter());
         push(getStatus());
         //        STACK = 0x0ff;
@@ -1328,11 +1411,12 @@ public class MOS65C02 extends CPU {
     }
 
     /**
-     * Special commands -- these are usually treated as NOP but can be reused for emulator controls
-     * !byte $fc, $65, $00 ; Turn off tracing
-     * !byte $fc, $65, $01 ; Turn on tracing
+     * Special commands -- these are usually treated as NOP but can be reused
+     * for emulator controls !byte $fc, $65, $00 ; Turn off tracing !byte $fc,
+     * $65, $01 ; Turn on tracing
+     *
      * @param param1
-     * @param param2 
+     * @param param2
      */
     public void performExtendedCommand(byte param1, byte param2) {
         LOG.log(Level.INFO, "Extended command {0},{1}", new Object[]{Integer.toHexString(param1), Integer.toHexString(param2)});
