@@ -27,8 +27,6 @@ import jace.core.RAMEvent.TYPE;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.*;
-import java.nio.charset.StandardCharsets;
-import java.util.Scanner;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.logging.Level;
@@ -52,23 +50,28 @@ public class CardApple2IORPi extends Card {
     final int outputFlagsReg = 0x07;
 
     final int outputFlagSendRequestMask = 0x01; // GPIO23
-    final int outputFlagReceiveConfirmMask = 0x02; // GPIO18
+    // final int outputFlagReceiveConfirmMask = 0x02; // GPIO18
 
     final int inputFlagReceiveRequestMask = 0x80; // GPIO24
     final int inputFlagSendConfirmMask = 0x40; // GPIO25
 
-    int outputFlagsValue = 0xff;
-    int inputFlagsValue = 0xff & ~inputFlagSendConfirmMask;
+    int outputFlagsValue;
+    int inputFlagsValue;
 
     BlockingQueue<Byte> receiveQueue = new LinkedBlockingQueue<>(512);
 
     final private DatagramSocket socket;
     Logger logger;
 
+    final int debugIo  = 0x01;
+    final int debugMem = 0x02;
+    int debug = 0;
+
     static String romPath = "jace/data/apple2-io-rpi.rom";
 
     public CardApple2IORPi(Computer computer) throws SocketException, UnknownHostException {
         super(computer);
+        reset();
         logger = Logger.getLogger(CardApple2IORPi.class.getName());
         try {
             loadRom(romPath);
@@ -99,6 +102,9 @@ public class CardApple2IORPi extends Card {
 
     @Override
     public void reset() {
+        receiveQueue.clear();
+        outputFlagsValue = 0xff;
+        inputFlagsValue = 0xff & ~inputFlagSendConfirmMask;
     }
 
     @Override
@@ -137,17 +143,16 @@ public class CardApple2IORPi extends Card {
                 }
             }
         }
-//        System.out.println(String.format("IO  %12s $%02X => $%02X", e.getType(), register, Byte.toUnsignedInt((byte) e.getNewValue())));
-//        try {
-//            Thread.sleep(100);
-//        } catch (InterruptedException ex) {
-//            ex.printStackTrace();
-//        }
+        if ((debug & debugIo) != 0) {
+            System.out.printf("IO  %12s $%02X => $%02X%n", e.getType(), register, Byte.toUnsignedInt((byte) e.getNewValue()));
+        }
     }
 
     @Override
     protected void handleFirmwareAccess(int offset, TYPE type, int value, RAMEvent e) {
-//        System.out.println(String.format("ROM %12s $%04X => $%02X", e.getType(), e.getAddress(), Byte.toUnsignedInt((byte) value)));
+        if ((debug & debugMem) != 0) {
+            System.out.printf("ROM %12s $%04X => $%02X%n", e.getType(), e.getAddress(), Byte.toUnsignedInt((byte) value));
+        }
     }
 
     @Override
