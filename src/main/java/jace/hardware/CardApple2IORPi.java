@@ -50,7 +50,7 @@ public class CardApple2IORPi extends Card {
     final int outputFlagsReg = 0x07;
 
     final int outputFlagSendRequestMask = 0x01; // GPIO23
-    // final int outputFlagReceiveConfirmMask = 0x02; // GPIO18
+    final int outputFlagReceiveConfirmMask = 0x02; // GPIO18
 
     final int inputFlagReceiveRequestMask = 0x80; // GPIO24
     final int inputFlagSendConfirmMask = 0x40; // GPIO25
@@ -65,6 +65,7 @@ public class CardApple2IORPi extends Card {
 
     final int debugIo  = 0x01;
     final int debugMem = 0x02;
+    final int debugLogical = 0x04;
     int debug = 0;
 
     static String romPath = "jace/data/apple2-io-rpi.rom";
@@ -115,7 +116,18 @@ public class CardApple2IORPi extends Card {
                 if (!receiveQueue.isEmpty()) {
                     inputFlagsValue &= ~inputFlagReceiveRequestMask;
                 }
-                inputFlagsValue |= inputFlagSendConfirmMask;
+                if ((inputFlagsValue & inputFlagSendConfirmMask) == 0) {
+                    inputFlagsValue |= inputFlagSendConfirmMask;
+                } else {
+                    inputFlagsValue &= ~inputFlagSendConfirmMask;
+                }
+                if ((debug & debugLogical) != 0) {
+                    System.out.printf("RR     IR: %d IC: %d OR: %d OC: %d\n",
+                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
+                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
+                }
             } else if (register == inputByteReg) {
                 try {
                     e.setNewValue(receiveQueue.take());
@@ -123,6 +135,14 @@ public class CardApple2IORPi extends Card {
                     logger.warning("cannot receive - queue operation was interrupted");
                 }
                 inputFlagsValue |= inputFlagReceiveRequestMask;
+                if ((debug & debugLogical) != 0) {
+                    System.out.printf("<= $%02x IR: %d IC: %d OR: %d OC: %d\n",
+                            Byte.toUnsignedInt((byte) e.getNewValue()),
+                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
+                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
+                }
             }
         } else if (type == TYPE.WRITE) {
             if (register == outputByteReg) {
@@ -134,12 +154,27 @@ public class CardApple2IORPi extends Card {
                     logger.warning("Could not send packet: " + e);
                 }
                 inputFlagsValue &= ~inputFlagSendConfirmMask;
+                if ((debug & debugLogical) != 0) {
+                    System.out.printf("=> $%02x IR: %d IC: %d OR: %d OC: %d\n",
+                            Byte.toUnsignedInt((byte) e.getNewValue()),
+                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
+                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
+                }
             } else if (register == outputFlagsReg) {
                 outputFlagsValue = e.getNewValue();
-                if ((outputFlagsValue & outputFlagSendRequestMask) == 0) {
+                if ((outputFlagsValue & outputFlagReceiveConfirmMask) == 0) {
                     inputFlagsValue |= inputFlagSendConfirmMask;
                 } else {
                     inputFlagsValue &= ~inputFlagSendConfirmMask;
+                }
+                if ((debug & debugLogical) != 0) {
+                    System.out.printf("WW     IR: %d IC: %d OR: %d OC: %d\n",
+                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
+                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
+                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
                 }
             }
         }
