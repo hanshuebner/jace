@@ -70,7 +70,7 @@ public class CardApple2IORPi extends Card {
     final int debugMem = 0x02;
     final int debugLogical = 0x04;
     final int debugSlow = 0x08;
-    int debug = debugLogical;
+    int debug = 0;
     int slowDelay = 10;
 
     static String romPath = "jace/data/apple2-io-rpi.rom";
