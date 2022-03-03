@@ -49,16 +49,19 @@ public class CardApple2IORPi extends Card {
     final int inputFlagsReg = 0x0b;
     final int outputFlagsReg = 0x07;
 
-    final int outputFlagSendRequestMask = 0x01; // GPIO23
-    final int outputFlagReceiveConfirmMask = 0x02; // GPIO18
+    final int outputFlagSendREQ = 0x01; // GPIO23
+    final int outputFlagReceiveREQ = 0x02; // GPIO18
 
-    final int inputFlagReceiveRequestMask = 0x80; // GPIO24
-    final int inputFlagSendConfirmMask = 0x40; // GPIO25
+    final int inputFlagReceiveACK = 0x80; // GPIO24
+    final int inputFlagSendACK = 0x40; // GPIO25
 
     int outputFlagsValue;
     int inputFlagsValue;
 
     BlockingQueue<Byte> receiveQueue = new LinkedBlockingQueue<>(512);
+
+    // Set to true when a byte has been sent to trigger send ack cycle
+    private boolean sent = false;
 
     final private DatagramSocket socket;
     Logger logger;
@@ -66,7 +69,9 @@ public class CardApple2IORPi extends Card {
     final int debugIo  = 0x01;
     final int debugMem = 0x02;
     final int debugLogical = 0x04;
-    int debug = 0;
+    final int debugSlow = 0x08;
+    int debug = debugLogical;
+    int slowDelay = 10;
 
     static String romPath = "jace/data/apple2-io-rpi.rom";
 
@@ -101,32 +106,67 @@ public class CardApple2IORPi extends Card {
         thread.start();
     }
 
+    void pause() {
+        if ((debug & debugSlow) != 0) {
+            try {
+                Thread.sleep(slowDelay);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public void logDebug(String tag, RAMEvent e) {
+        if ((debug & debugLogical) != 0) {
+            System.out.print(tag);
+            if (e != null) {
+                System.out.printf(" $%02x ", Byte.toUnsignedInt((byte) e.getNewValue()));
+            } else {
+                System.out.print("     ");
+            }
+            System.out.printf("%s %s %s %s\n",
+                    (outputFlagsValue & outputFlagSendREQ) == 0 ? "sREQ" : "    ",
+                    (inputFlagsValue & inputFlagSendACK) == 0 ? "sACK" : "    ",
+                    (inputFlagsValue & inputFlagReceiveACK) == 0 ? "rACK" : "    ",
+                    (outputFlagsValue & outputFlagReceiveREQ) == 0 ? "rREQ" : "    ");
+            pause();
+        }
+    }
+
     @Override
     public void reset() {
         receiveQueue.clear();
         outputFlagsValue = 0xff;
-        inputFlagsValue = 0xff & ~inputFlagSendConfirmMask;
+        inputFlagsValue = 0xff & ~inputFlagSendACK;
     }
 
     @Override
     protected void handleIOAccess(int register, TYPE type, int value, RAMEvent e) {
         if (type == TYPE.READ_DATA) {
             if (register == inputFlagsReg) {
-                e.setNewValue(inputFlagsValue);
-                if (!receiveQueue.isEmpty()) {
-                    inputFlagsValue &= ~inputFlagReceiveRequestMask;
-                }
-                if ((inputFlagsValue & inputFlagSendConfirmMask) == 0) {
-                    inputFlagsValue |= inputFlagSendConfirmMask;
+                int previous = inputFlagsValue;
+                if (sent) {
+                    if ((inputFlagsValue & inputFlagSendACK) != 0) {
+                        inputFlagsValue &= ~inputFlagSendACK;
+                    } else {
+                        inputFlagsValue |= inputFlagSendACK;
+                        sent = false;
+                    }
                 } else {
-                    inputFlagsValue &= ~inputFlagSendConfirmMask;
+                    inputFlagsValue &= ~inputFlagSendACK;
                 }
-                if ((debug & debugLogical) != 0) {
-                    System.out.printf("RR     IR: %d IC: %d OR: %d OC: %d\n",
-                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
-                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
+                if ((outputFlagsValue & outputFlagReceiveREQ) == 0) {
+                    if (!receiveQueue.isEmpty()) {
+                        inputFlagsValue &= ~inputFlagReceiveACK;
+                    } else {
+                        inputFlagsValue |= inputFlagReceiveACK;
+                    }
+                } else {
+                    inputFlagsValue |= inputFlagReceiveACK;
+                }
+                e.setNewValue(inputFlagsValue);
+                if (previous != inputFlagsValue) {
+                    logDebug("RR", null);
                 }
             } else if (register == inputByteReg) {
                 try {
@@ -134,15 +174,7 @@ public class CardApple2IORPi extends Card {
                 } catch (InterruptedException ex) {
                     logger.warning("cannot receive - queue operation was interrupted");
                 }
-                inputFlagsValue |= inputFlagReceiveRequestMask;
-                if ((debug & debugLogical) != 0) {
-                    System.out.printf("<= $%02x IR: %d IC: %d OR: %d OC: %d\n",
-                            Byte.toUnsignedInt((byte) e.getNewValue()),
-                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
-                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
-                }
+                logDebug("<=", e);
             }
         } else if (type == TYPE.WRITE) {
             if (register == outputByteReg) {
@@ -153,33 +185,19 @@ public class CardApple2IORPi extends Card {
                 } catch (IOException ex) {
                     logger.warning("Could not send packet: " + e);
                 }
-                inputFlagsValue &= ~inputFlagSendConfirmMask;
-                if ((debug & debugLogical) != 0) {
-                    System.out.printf("=> $%02x IR: %d IC: %d OR: %d OC: %d\n",
-                            Byte.toUnsignedInt((byte) e.getNewValue()),
-                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
-                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
-                }
+                logDebug("=>", e);
+                inputFlagsValue |= inputFlagSendACK;
+                sent = true;
             } else if (register == outputFlagsReg) {
-                outputFlagsValue = e.getNewValue();
-                if ((outputFlagsValue & outputFlagReceiveConfirmMask) == 0) {
-                    inputFlagsValue |= inputFlagSendConfirmMask;
-                } else {
-                    inputFlagsValue &= ~inputFlagSendConfirmMask;
-                }
-                if ((debug & debugLogical) != 0) {
-                    System.out.printf("WW     IR: %d IC: %d OR: %d OC: %d\n",
-                            (inputFlagsValue & inputFlagReceiveRequestMask) == 0 ? 1 : 0,
-                            (inputFlagsValue & inputFlagSendConfirmMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagSendRequestMask) == 0 ? 1 : 0,
-                            (outputFlagsValue & outputFlagReceiveConfirmMask) == 0 ? 1 : 0);
+                if (e.getNewValue() != outputFlagsValue) {
+                    outputFlagsValue = e.getNewValue();
+                    logDebug("WW", null);
                 }
             }
         }
         if ((debug & debugIo) != 0) {
             System.out.printf("IO  %12s $%02X => $%02X%n", e.getType(), register, Byte.toUnsignedInt((byte) e.getNewValue()));
+            pause();
         }
     }
 
